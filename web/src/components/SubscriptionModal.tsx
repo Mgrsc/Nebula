@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { coerceLanguage, strings } from "../i18n";
 import { supportedCurrencies } from "../data/currencies";
-import { normalizeCurrency, isValidCurrency, todayISO } from "../utils/helpers";
+import { normalizeCurrency, isValidCurrency } from "../utils/helpers";
 import { useAuthHeaders } from "../contexts/AuthContext";
 import { apiFetch } from "../utils/api";
 import type {
@@ -53,9 +53,10 @@ export default function SubscriptionModal(props: {
   const [price, setPrice] = useState("10");
   const [currency, setCurrency] = useState<string>("USD");
   const [currencyInput, setCurrencyInput] = useState<string>("");
-  const [paymentCycle, setPaymentCycle] = useState("monthly");
+  const [paymentCycle, setPaymentCycle] = useState("");
   const [customDays, setCustomDays] = useState("30");
-  const [startDate, setStartDate] = useState(todayISO());
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
 
   const [notifyEnabled, setNotifyEnabled] = useState(false);
@@ -67,6 +68,31 @@ export default function SubscriptionModal(props: {
   const [loadingLogos, setLoadingLogos] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastModified, setLastModified] = useState<"start" | "end" | "cycle" | null>(null);
+
+  const cycleDays = useMemo(() => {
+    if (!paymentCycle) return null;
+    if (paymentCycle === "monthly") return 30;
+    if (paymentCycle === "yearly") return 365;
+    if (paymentCycle === "custom_days") return Number(customDays) || 30;
+    return null;
+  }, [paymentCycle, customDays]);
+
+  const daysInfo = useMemo(() => {
+    if (!startDate || !endDate) return null;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+    const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const daysLeft = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    return { totalDays, daysLeft };
+  }, [startDate, endDate]);
 
   const effectiveCurrency = useMemo(() => normalizeCurrency(currency), [currency]);
 
@@ -93,9 +119,10 @@ export default function SubscriptionModal(props: {
       setPrice("10");
       setCurrency((settings?.baseCurrency || "USD"));
       setCurrencyInput("");
-      setPaymentCycle("monthly");
+      setPaymentCycle("");
       setCustomDays("30");
-      setStartDate(todayISO());
+      setStartDate("");
+      setEndDate("");
       setPaymentMethod("");
       setNotifyEnabled(false);
       setNotifyDays("7,3,1,0");
@@ -113,15 +140,71 @@ export default function SubscriptionModal(props: {
     const cur = normalizeCurrency(s.currency ?? (settings?.baseCurrency || "USD"));
     setCurrency(cur);
     setCurrencyInput("");
-    setPaymentCycle(s.payment_cycle ?? "monthly");
+    setPaymentCycle(s.payment_cycle ?? "");
     setCustomDays(String(s.custom_days ?? 30));
-    setStartDate(s.start_date ?? todayISO());
+    setStartDate(s.start_date ?? "");
+    setEndDate(s.next_due_date ?? "");
     setPaymentMethod(s.payment_method ?? "");
     setNotifyEnabled(Boolean(s.notify_enabled));
     setNotifyDays(s.notify_days ?? "7,3,1,0");
     setNotifyTime(s.notify_time ?? "09:00");
     setSelectedWebhookIds(Array.isArray(s.notify_channel_ids) ? s.notify_channel_ids : []);
   }, [props.open, props.initial, settings?.baseCurrency]);
+
+  useEffect(() => {
+    if (!props.open || lastModified !== "end") return;
+    if (!endDate || !cycleDays) return;
+
+    try {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) return;
+
+      const start = new Date(end);
+      start.setDate(start.getDate() - cycleDays);
+      setStartDate(start.toISOString().slice(0, 10));
+    } catch (e) {
+    }
+  }, [endDate, cycleDays, lastModified, props.open]);
+
+  useEffect(() => {
+    if (!props.open || lastModified !== "start") return;
+    if (!startDate || !cycleDays) return;
+
+    try {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) return;
+
+      const end = new Date(start);
+      end.setDate(end.getDate() + cycleDays);
+      setEndDate(end.toISOString().slice(0, 10));
+    } catch (e) {
+    }
+  }, [startDate, cycleDays, lastModified, props.open]);
+
+  useEffect(() => {
+    if (!props.open) return;
+    if (lastModified === "cycle") return;
+    if (!startDate || !endDate) return;
+    if (paymentCycle) return;
+
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+
+      const daysDiff = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (Math.abs(daysDiff - 30) <= 2) {
+        setPaymentCycle("monthly");
+      } else if (Math.abs(daysDiff - 365) <= 2) {
+        setPaymentCycle("yearly");
+      } else if (daysDiff > 0) {
+        setPaymentCycle("custom_days");
+        setCustomDays(String(daysDiff));
+      }
+    } catch (e) {
+    }
+  }, [startDate, endDate, paymentCycle, lastModified, props.open]);
 
   async function searchLogos() {
     setLoadingLogos(true);
@@ -157,6 +240,7 @@ export default function SubscriptionModal(props: {
         paymentCycle,
         customDays: paymentCycle === "custom_days" ? Number(customDays) : undefined,
         startDate,
+        nextDueDate: endDate.trim() || undefined,
         paymentMethod: paymentMethod.trim() || undefined,
         notifyEnabled,
         notifyDays: notifyDays.trim() || undefined,
@@ -362,8 +446,12 @@ export default function SubscriptionModal(props: {
           <select
             className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
             value={paymentCycle}
-            onChange={(e) => setPaymentCycle(e.target.value)}
+            onChange={(e) => {
+              setPaymentCycle(e.target.value);
+              setLastModified("cycle");
+            }}
 	          >
+	            <option value="">{lang === "en" ? "Select cycle..." : "选择支付频率..."}</option>
 	            <option value="monthly">{lang === "en" ? "Monthly" : "每月"}</option>
 	            <option value="yearly">{lang === "en" ? "Yearly" : "每年"}</option>
 	            <option value="custom_days">{lang === "en" ? "Custom (days)" : "自定义（天）"}</option>
@@ -385,8 +473,32 @@ export default function SubscriptionModal(props: {
             type="date"
             className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setLastModified("start");
+            }}
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-white/60">{lang === "en" ? "End date / Next due" : "结束时间 / 下次到期"}</label>
+          <input
+            type="date"
+            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              setLastModified("end");
+            }}
+            placeholder={lang === "en" ? "Optional" : "可选"}
+          />
+          {daysInfo && (
+            <div className="mt-2 text-xs text-white/60">
+              {lang === "en"
+                ? `Total: ${daysInfo.totalDays} days | Remaining: ${daysInfo.daysLeft} days`
+                : `总计：${daysInfo.totalDays} 天 | 剩余：${daysInfo.daysLeft} 天`}
+            </div>
+          )}
         </div>
 
         <div>
