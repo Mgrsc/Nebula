@@ -115,18 +115,18 @@ export default function Calendar(props: {
           >
             ←
           </button>
-          
+
           <div className="flex items-center bg-white/5 rounded-lg border border-white/10 px-1 mx-1">
-            <select 
-              value={props.year} 
+            <select
+              value={props.year}
               onChange={(e) => props.onChangeMonth(Number(e.target.value), props.month)}
               className="bg-transparent text-sm text-white outline-none cursor-pointer py-1 text-center font-medium [&>option]:bg-slate-900"
             >
               {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
             <span className="text-white/20 text-xs mx-1">/</span>
-            <select 
-              value={props.month} 
+            <select
+              value={props.month}
               onChange={(e) => props.onChangeMonth(props.year, Number(e.target.value))}
               className="bg-transparent text-sm text-white outline-none cursor-pointer py-1 text-center font-medium [&>option]:bg-slate-900"
             >
@@ -182,7 +182,7 @@ export default function Calendar(props: {
           {grid.map((c, idx) => {
             const count = c.iso ? (dueMap.get(c.iso)?.length ?? 0) : 0;
             const selected = c.iso && props.selectedISO === c.iso;
-            
+
             return (
               <button
                 key={idx}

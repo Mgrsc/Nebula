@@ -12,6 +12,7 @@ import { webhooksRoutes } from "./routes/webhooks";
 import { subsRoutes } from "./routes/subs";
 import { cleanExpiredSessions } from "./services/auth";
 import { startScheduler } from "./services/scheduler";
+import path from "path";
 
 ensureSchema();
 
@@ -20,8 +21,15 @@ setInterval(() => cleanExpiredSessions(), 60 * 60 * 1000);
 
 startScheduler();
 
+const isDev = process.env.NODE_ENV !== "production";
+const WEB_DIST_PATH = process.env.WEB_DIST_PATH ?? path.join(__dirname, "../../web/dist");
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map(o => o.trim()) ?? [];
+
 const app = new Elysia()
-  .use(cors({ origin: true, credentials: true }))
+  .use(cors({
+    origin: isDev ? true : (allowedOrigins.length > 0 ? allowedOrigins : false),
+    credentials: true
+  }))
   .use(authRoutes)
   .use(backupRoutes)
   .use(logsRoutes)
@@ -32,17 +40,30 @@ const app = new Elysia()
   .get("/api/health", () => ({ ok: true }))
   .use(
     staticPlugin({
-      assets: "../web/dist",
-      prefix: "/"
+      assets: path.join(WEB_DIST_PATH, "assets"),
+      prefix: "/assets",
+      headers: {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
     })
   )
-  .get("/*", ({ path }) => {
-    if (path.startsWith("/api/")) return notFound();
-    try {
-      return Bun.file("../web/dist/index.html");
-    } catch {
-      return notFound("web not built");
+  .get("/*", async ({ path: requestPath, set }) => {
+    if (requestPath.startsWith("/api/")) return notFound();
+
+    const indexPath = path.join(WEB_DIST_PATH, "index.html");
+    const file = Bun.file(indexPath);
+
+    if (!(await file.exists())) {
+      console.error(`[ERROR] index.html not found at: ${indexPath}`);
+      set.status = 500;
+      return { error: "Frontend files not found. Please rebuild the application." };
     }
+
+    set.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    set.headers["Pragma"] = "no-cache";
+    set.headers["Expires"] = "0";
+
+    return new Response(file);
   })
   .listen(Number(process.env.PORT ?? 3000));
 

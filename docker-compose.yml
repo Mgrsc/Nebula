@@ -5,4 +5,10 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      # CORS Configuration: Add your allowed origins (comma-separated)
+      # Example: ALLOWED_ORIGINS=https://example.com,https://app.example.com
+      # Leave empty if frontend and backend are served from the same origin
+      - ALLOWED_ORIGINS=
     restart: unless-stopped
