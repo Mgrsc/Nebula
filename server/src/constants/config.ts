@@ -1,0 +1,9 @@
+export const WEBHOOK_TIMEOUT_MS = 10_000;
+export const RATE_FETCH_TIMEOUT_MS = 10_000;
+export const LOGO_FETCH_TIMEOUT_MS = 7_000;
+export const MAX_LOG_LIMIT = 200;
+export const DEFAULT_LOG_LIMIT = 50;
+export const MAX_LOGO_CANDIDATES = 12;
+export const EXCHANGE_RATE_CACHE_HOURS = 23;
+export const DEFAULT_NOTIFY_DAYS = "7,3,1,0";
+export const DEFAULT_NOTIFY_TIME = "09:00";

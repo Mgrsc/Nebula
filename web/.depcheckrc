@@ -1,0 +1,8 @@
+{
+  "ignores": [
+    "autoprefixer",
+    "postcss",
+    "tailwindcss",
+    "typescript"
+  ]
+}
