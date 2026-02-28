@@ -44,7 +44,7 @@ function Card({
   return (
     <div
       className={[
-        "glass-panel relative overflow-hidden rounded-xl p-4 transition-all",
+        "glass-panel relative overflow-hidden rounded-xl p-4 transition-all flex flex-col justify-between h-full",
         canEdit ? "cursor-pointer hover:bg-white/10" : "",
         isUrgent ? "ring-1 ring-red-500/50" : ""
       ].join(" ")}
@@ -53,7 +53,7 @@ function Card({
       tabIndex={canEdit ? 0 : undefined}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-white p-1 shadow-[0_0_15px_rgba(255,255,255,0.1)] ring-1 ring-white/20">
             {sub.logo_url ? (
               <img src={sub.logo_url} alt={sub.name} className="h-full w-full object-contain" />
@@ -61,21 +61,21 @@ function Card({
               <div className="flex h-full w-full items-center justify-center text-2xl bg-slate-100 rounded-lg">{sub.icon ?? "📦"}</div>
             )}
           </div>
-          <div>
-            <div className="font-semibold text-white text-lg leading-tight">{sub.name}</div>
-            <div className="text-xs text-white/50 capitalize mt-0.5">{sub.payment_cycle.replace('_', ' ')}</div>
+          <div className="min-w-0">
+            <div className="font-semibold text-white text-base leading-tight line-clamp-2" title={sub.name}>{sub.name}</div>
+            <div className="text-xs text-white/60 capitalize mt-0.5 truncate">{sub.payment_cycle.replace('_', ' ')}</div>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right shrink-0">
           <div className="text-xl font-bold text-white tabular-nums tracking-tight">{top}</div>
-          {bottom ? <div className="text-xs text-white/40 tabular-nums font-light">{bottom}</div> : null}
+          {bottom ? <div className="text-xs text-white/50 tabular-nums font-light">{bottom}</div> : null}
         </div>
       </div>
       
-      <div className="mt-5">
-        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-medium text-white/40 mb-1.5">
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-medium text-white/60 mb-1.5">
           <span>{sub.next_due_date}</span>
-          <span className={sub.days_left <= 3 ? "text-red-400" : ""}>{sub.days_left} days left</span>
+          <span className={sub.days_left <= 3 ? "text-red-400 font-bold" : "font-bold"}>{sub.days_left} days left</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div
