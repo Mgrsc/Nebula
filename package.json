@@ -1,0 +1,13 @@
+{
+  "name": "nebula",
+  "private": true,
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "bun run --workspaces --parallel dev",
+    "dev:server": "bun run --cwd server dev",
+    "dev:web": "bun run --cwd web dev"
+  }
+}
