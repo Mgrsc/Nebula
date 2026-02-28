@@ -1,7 +1,9 @@
 FROM oven/bun:1 AS web-builder
 WORKDIR /app
-COPY web/package.json web/bun.lock ./web/
-RUN cd web && bun install --frozen-lockfile
+COPY package.json bun.lock ./
+COPY web/package.json ./web/package.json
+COPY server/package.json ./server/package.json
+RUN bun install --frozen-lockfile --filter=nebula-web
 COPY web ./web
 COPY shared ./shared
 WORKDIR /app/web
