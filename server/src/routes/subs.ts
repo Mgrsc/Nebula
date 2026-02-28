@@ -5,10 +5,20 @@ import { errorResponse, notFound, serverError } from "../helpers/response";
 import { log } from "../services/logger";
 import { getAuthStatus } from "../services/auth";
 import { getSettings, parseNumericId, recordExists } from "../helpers/database";
-import { validateSubscriptionInput } from "../validators";
+import { parseNotifyChannelIds, validateSubscriptionInput } from "../validators";
 import { todayISOInTimeZone, diffDays } from "../services/time";
 import { convertToBaseCurrency } from "../services/rates";
 import { computeNextDueDate, type PaymentCycle } from "../services/dates";
+
+function parseStoredChannelIds(value: string | null | undefined): number[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return parseNotifyChannelIds(parsed) ?? [];
+  } catch {
+    return [];
+  }
+}
 
 export const subsRoutes = new Elysia({ prefix: "/api" })
   .post(
@@ -17,7 +27,9 @@ export const subsRoutes = new Elysia({ prefix: "/api" })
       const authCheck = requireAuth()({ headers } as any);
       if (authCheck) return authCheck;
 
-      const validation = validateSubscriptionInput(body);
+      const settings = getSettings();
+      const defaultNotifyChannelIds = parseStoredChannelIds(settings?.default_notify_channel_ids);
+      const validation = validateSubscriptionInput(body, { defaultNotifyChannelIds });
       if (!validation.ok) {
         return errorResponse(validation.error, validation.status);
       }

@@ -20,6 +20,7 @@ export type ApiSettingsResponse = {
   language: Language;
   baseCurrency: string;
   publicDashboard: boolean;
+  defaultWebhookChannelIds: number[];
   exchange: { enabled: boolean; apiKeySet: boolean; lastUpdate: string | null };
 };
 
@@ -28,7 +29,14 @@ export type ApiSettingsPatchRequest = {
   language?: Language;
   baseCurrency?: string;
   publicDashboard?: boolean;
+  defaultWebhookChannelIds?: number[];
   exchange?: { enabled?: boolean; apiKey?: string };
+};
+
+export type ApiSettingsApplyDefaultWebhooksResponse = {
+  ok: true;
+  updated: number;
+  defaultWebhookChannelIds: number[];
 };
 
 export type ApiRatesRefreshResponse = { ok: true; updated: boolean; at?: string };

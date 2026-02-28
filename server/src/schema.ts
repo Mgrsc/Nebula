@@ -15,6 +15,7 @@ export function ensureSchema() {
       auth_enabled INTEGER NOT NULL DEFAULT 0,
       password_hash TEXT,
       public_dashboard INTEGER NOT NULL DEFAULT 1,
+      default_notify_channel_ids TEXT,
 
       backup_webdav_url TEXT,
       backup_webdav_username TEXT,
@@ -93,4 +94,9 @@ export function ensureSchema() {
   db.run(`
     INSERT OR IGNORE INTO settings (id) VALUES (1);
   `);
+
+  try {
+    db.run(`ALTER TABLE settings ADD COLUMN default_notify_channel_ids TEXT;`);
+  } catch {
+  }
 }

@@ -50,7 +50,10 @@ export type ValidationResult =
   | { ok: true; data: any }
   | { ok: false; error: string; status: number };
 
-export function validateSubscriptionInput(input: SubscriptionInput): ValidationResult {
+export function validateSubscriptionInput(
+  input: SubscriptionInput,
+  options?: { defaultNotifyChannelIds?: number[] }
+): ValidationResult {
   const icon = input.icon?.trim() ?? null;
   if (icon && icon.length > 16) return { ok: false, error: "icon too long", status: 400 };
 
@@ -98,8 +101,10 @@ export function validateSubscriptionInput(input: SubscriptionInput): ValidationR
   const notifyTime = (input.notifyTime?.trim() ?? DEFAULT_NOTIFY_TIME) || DEFAULT_NOTIFY_TIME;
   if (!isValidTimeHHMM(notifyTime)) return { ok: false, error: "invalid notifyTime", status: 400 };
 
-  const channelIds = input.notifyChannelIds ? parseNotifyChannelIds(input.notifyChannelIds) : [];
-  if (channelIds === null) return { ok: false, error: "invalid notifyChannelIds", status: 400 };
+  const parsedNotifyChannelIds = input.notifyChannelIds ? parseNotifyChannelIds(input.notifyChannelIds) : undefined;
+  if (parsedNotifyChannelIds === null) return { ok: false, error: "invalid notifyChannelIds", status: 400 };
+  const defaultNotifyChannelIds = parseNotifyChannelIds(options?.defaultNotifyChannelIds ?? []) ?? [];
+  const channelIds = parsedNotifyChannelIds ?? defaultNotifyChannelIds;
   const notifyChannelIds = channelIds.length ? JSON.stringify(channelIds) : null;
 
   return {

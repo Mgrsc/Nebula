@@ -8,6 +8,7 @@ export type SettingsRow = {
   auth_enabled: number;
   password_hash: string | null;
   public_dashboard: number;
+  default_notify_channel_ids: string | null;
 
   backup_webdav_url?: string | null;
   backup_webdav_username?: string | null;

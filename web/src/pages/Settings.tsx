@@ -19,6 +19,7 @@ import type {
   ApiLogItem,
   ApiLogsResponse,
   ApiRatesRefreshResponse,
+  ApiSettingsApplyDefaultWebhooksResponse,
   ApiSettingsPatchRequest,
   ApiSettingsResponse,
   ApiWebhookChannel,
@@ -72,6 +73,9 @@ export default function Settings() {
   const t = strings[language];
 
   const [webhooks, setWebhooks] = useState<ApiWebhookChannel[]>([]);
+  const [defaultWebhookChannelIds, setDefaultWebhookChannelIds] = useState<number[]>([]);
+  const [savingDefaultWebhook, setSavingDefaultWebhook] = useState(false);
+  const [applyingDefaultWebhook, setApplyingDefaultWebhook] = useState(false);
   const [whName, setWhName] = useState("");
   const [whUrl, setWhUrl] = useState("");
   const [whEnabled, setWhEnabled] = useState(false);
@@ -118,6 +122,7 @@ export default function Settings() {
         setExchangeEnabled(s.exchange.enabled);
         setApiKey("");
         setPublicDashboard(s.publicDashboard !== false);
+        setDefaultWebhookChannelIds(Array.isArray(s.defaultWebhookChannelIds) ? s.defaultWebhookChannelIds : []);
       })
       .catch((e) => {
         if (!alive) return;
@@ -131,6 +136,7 @@ export default function Settings() {
   async function loadWebhooks() {
     const data = await apiFetch<ApiWebhooksListResponse>("/api/webhooks", { headers: authHeaders });
     setWebhooks(data.items);
+    setDefaultWebhookChannelIds((prev) => prev.filter((id) => data.items.some((wh) => wh.id === id)));
   }
 
   async function loadLogs(limit: number) {
@@ -234,6 +240,43 @@ export default function Settings() {
       setMessage(t.saved);
     } catch (e: any) {
       setError(String(e?.message ?? e));
+    }
+  }
+
+  async function saveDefaultWebhookChannels() {
+    setSavingDefaultWebhook(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await apiFetch<{ ok: true }>("/api/settings", {
+        method: "PATCH",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ defaultWebhookChannelIds })
+      });
+      setLoaded((prev) => (prev ? { ...prev, defaultWebhookChannelIds: [...defaultWebhookChannelIds] } : prev));
+      setMessage(t.saved);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setSavingDefaultWebhook(false);
+    }
+  }
+
+  async function applyDefaultWebhookChannelsToAll() {
+    if (!confirm(t.applyToAllConfirm)) return;
+    setApplyingDefaultWebhook(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const data = await apiFetch<ApiSettingsApplyDefaultWebhooksResponse>("/api/settings/webhooks/apply-default", {
+        method: "POST",
+        headers: authHeaders
+      });
+      setMessage(`${t.applyToAllDonePrefix}${data.updated}`);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setApplyingDefaultWebhook(false);
     }
   }
 
@@ -575,6 +618,9 @@ export default function Settings() {
           <WebhooksTab
             language={language}
             webhooks={webhooks}
+            defaultWebhookChannelIds={defaultWebhookChannelIds}
+            savingDefaultWebhook={savingDefaultWebhook}
+            applyingDefaultWebhook={applyingDefaultWebhook}
             addWhOpen={addWhOpen}
             setAddWhOpen={setAddWhOpen}
             whName={whName}
@@ -588,6 +634,17 @@ export default function Settings() {
             addWhTextareaRef={addWhTextareaRef}
             chips={webhookTemplateChips}
             presets={webhookTemplatePresets}
+            onToggleDefaultWebhook={(id, checked) => {
+              setDefaultWebhookChannelIds((prev) => {
+                if (checked) {
+                  if (prev.includes(id)) return prev;
+                  return [...prev, id];
+                }
+                return prev.filter((x) => x !== id);
+              });
+            }}
+            onSaveDefaultWebhook={saveDefaultWebhookChannels}
+            onApplyDefaultToAll={applyDefaultWebhookChannelsToAll}
             onAddWebhook={addWebhook}
             onReload={loadWebhooks}
           />

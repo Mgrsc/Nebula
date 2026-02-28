@@ -7,6 +7,9 @@ import type { RefObject } from "react";
 export default function WebhooksTab(props: {
   language: Language;
   webhooks: ApiWebhookChannel[];
+  defaultWebhookChannelIds: number[];
+  savingDefaultWebhook: boolean;
+  applyingDefaultWebhook: boolean;
   addWhOpen: boolean;
   setAddWhOpen: (v: boolean) => void;
   whName: string;
@@ -20,6 +23,9 @@ export default function WebhooksTab(props: {
   addWhTextareaRef: RefObject<HTMLTextAreaElement>;
   chips: string[];
   presets: { id: string; name: string; template: string }[];
+  onToggleDefaultWebhook: (id: number, checked: boolean) => void;
+  onSaveDefaultWebhook: () => void | Promise<void>;
+  onApplyDefaultToAll: () => void | Promise<void>;
   onAddWebhook: () => void | Promise<void>;
   onReload: () => void | Promise<void>;
 }) {
@@ -39,6 +45,54 @@ export default function WebhooksTab(props: {
         >
           {props.addWhOpen ? t.cancel : t.addChannel}
         </button>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium text-white">{t.defaultWebhookTitle}</div>
+            <div className="mt-1 text-xs text-white/60">{t.defaultWebhookDesc}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+              onClick={props.onApplyDefaultToAll}
+              disabled={props.applyingDefaultWebhook}
+            >
+              {props.applyingDefaultWebhook ? t.saving : t.applyToAllSubscriptions}
+            </button>
+            <button
+              className="rounded-lg bg-sky-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+              onClick={props.onSaveDefaultWebhook}
+              disabled={props.savingDefaultWebhook}
+            >
+              {props.savingDefaultWebhook ? t.saving : t.save}
+            </button>
+          </div>
+        </div>
+        {props.webhooks.length ? (
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {props.webhooks.map((wh) => {
+              const checked = props.defaultWebhookChannelIds.includes(wh.id);
+              return (
+                <label key={wh.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => props.onToggleDefaultWebhook(wh.id, e.target.checked)}
+                    className="h-4 w-4 accent-sky-400"
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-white">{wh.name}</div>
+                    <div className="truncate text-xs text-white/50">{wh.url}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-white/50">{t.noWebhooksConfigured}</div>
+        )}
       </div>
 
       {props.addWhOpen && (

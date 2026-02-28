@@ -183,7 +183,7 @@ export default function SubscriptionModal(props: {
       setNotifyEnabled(false);
       setNotifyDays("7,3,1,0");
       setNotifyTime("09:00");
-      setSelectedWebhookIds([]);
+      setSelectedWebhookIds(Array.isArray(settings?.defaultWebhookChannelIds) ? settings.defaultWebhookChannelIds : []);
       return;
     }
 
@@ -205,7 +205,7 @@ export default function SubscriptionModal(props: {
     setNotifyDays(s.notify_days ?? "7,3,1,0");
     setNotifyTime(s.notify_time ?? "09:00");
     setSelectedWebhookIds(Array.isArray(s.notify_channel_ids) ? s.notify_channel_ids : []);
-  }, [props.open, props.initial, settings?.baseCurrency]);
+  }, [props.open, props.initial, settings?.baseCurrency, settings?.defaultWebhookChannelIds]);
 
   useEffect(() => {
     if (!props.open || lastModified !== "end") return;
@@ -404,8 +404,8 @@ export default function SubscriptionModal(props: {
             <div className="text-sm font-medium text-white">{lang === "en" ? "Logo" : "订阅 Logo"}</div>
             <div className="mt-1 text-xs text-white/60">
               {lang === "en"
-                ? "Search by name (Wikipedia) and show candidates. You can also paste a logo URL."
-                : "按名称联网搜索（Wikipedia/站点 icon）并提供候选图片；也可以直接粘贴图片链接。"}
+                ? "Search by website URL and show icon candidates. You can also paste a logo URL."
+                : "按站点 URL 搜索并提供 icon 候选图片；也可以直接粘贴图片链接。"}
             </div>
           </div>
           <button
