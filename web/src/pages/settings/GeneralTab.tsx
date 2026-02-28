@@ -19,14 +19,19 @@ export default function GeneralTab(props: {
         <div className="grid grid-cols-1 gap-4">
           <div className="max-w-[400px]">
             <label className="text-xs text-white/50 block mb-2">{t.interfaceLanguageLabel}</label>
-            <select
-              className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50"
-              value={props.language}
-              onChange={(e) => props.onChangeLanguage(e.target.value === "en" ? "en" : "zh-CN")}
-            >
-              <option value="zh-CN">中文 (zh-CN)</option>
-              <option value="en">English (en)</option>
-            </select>
+            <div className="relative">
+              <select
+                className="w-full appearance-none rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50 transition-colors"
+                value={props.language}
+                onChange={(e) => props.onChangeLanguage(e.target.value === "en" ? "en" : "zh-CN")}
+              >
+                <option value="zh-CN">中文 (zh-CN)</option>
+                <option value="en">English (en)</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-white/40">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -35,17 +40,22 @@ export default function GeneralTab(props: {
         <h2 className="text-lg font-semibold text-white mb-4">{t.timezoneTitle}</h2>
         <div className="text-xs text-white/50 mb-4">{t.timezoneDesc}</div>
         <div className="max-w-[400px]">
-          <select
-            className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50"
-            value={props.timezone}
-            onChange={(e) => props.onChangeTimezone(e.target.value)}
-          >
-            {props.timezones.map((tz) => (
-              <option key={tz.value} value={tz.value}>
-                {tz.label}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              className="w-full appearance-none rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50 transition-colors"
+              value={props.timezone}
+              onChange={(e) => props.onChangeTimezone(e.target.value)}
+            >
+              {props.timezones.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-white/40">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </div>
         </div>
       </div>
 

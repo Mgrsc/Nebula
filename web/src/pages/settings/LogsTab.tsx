@@ -45,17 +45,22 @@ export default function LogsTab(props: {
 
         <div className="mt-4 flex items-center gap-3">
           <div className="text-xs text-white/50">{props.language === "zh-CN" ? "数量" : "Limit"}</div>
-          <select
-            className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50 [&>option]:bg-slate-900"
-            value={props.limit}
-            onChange={(e) => props.setLimit(Number(e.target.value))}
-          >
-            {[20, 50, 100, 200].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              className="appearance-none rounded-lg border border-white/10 bg-slate-950 pl-3 pr-8 py-2 text-sm text-white outline-none focus:border-sky-500/50 transition-colors [&>option]:bg-slate-900"
+              value={props.limit}
+              onChange={(e) => props.setLimit(Number(e.target.value))}
+            >
+              {[20, 50, 100, 200].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-white/40">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import DatePicker from "./DatePicker";
+import ComboBox from "./ComboBox";
 import { coerceLanguage, strings } from "../i18n";
 import { supportedCurrencies } from "../data/currencies";
 import { normalizeCurrency, isValidCurrency } from "../utils/helpers";
@@ -17,6 +19,76 @@ type LogoCandidate = { url: string; title?: string; source: string };
 type LogosResponse = { items: LogoCandidate[] };
 type SubscriptionRow = ApiSubscription;
 type WebhookChannel = ApiWebhookChannel;
+
+function parseISODate(value: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  return { year, month, day };
+}
+
+function formatISODate(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function addDaysISO(dateISO: string, days: number): string | null {
+  const p = parseISODate(dateISO);
+  if (!p) return null;
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function addMonthsISO(dateISO: string, months: number): string | null {
+  const p = parseISODate(dateISO);
+  if (!p) return null;
+  const targetMonth = p.month - 1 + months;
+  const year = p.year + Math.floor(targetMonth / 12);
+  const monthIndex = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const day = Math.min(p.day, lastDay);
+  return formatISODate(year, monthIndex + 1, day);
+}
+
+function addYearsISO(dateISO: string, years: number): string | null {
+  return addMonthsISO(dateISO, years * 12);
+}
+
+function computeNextDueDateForCycle(
+  startDate: string,
+  paymentCycle: string,
+  customDays: string
+): string | null {
+  if (!parseISODate(startDate)) return null;
+  if (paymentCycle === "monthly") return addMonthsISO(startDate, 1);
+  if (paymentCycle === "yearly") return addYearsISO(startDate, 1);
+  if (paymentCycle === "custom_days") {
+    const days = Number(customDays);
+    if (!Number.isFinite(days) || days <= 0) return null;
+    return addDaysISO(startDate, Math.trunc(days));
+  }
+  return null;
+}
+
+function diffDaysISO(startDate: string, endDate: string): number | null {
+  const s = parseISODate(startDate);
+  const e = parseISODate(endDate);
+  if (!s || !e) return null;
+  const start = Date.UTC(s.year, s.month - 1, s.day);
+  const end = Date.UTC(e.year, e.month - 1, e.day);
+  return Math.round((end - start) / 86_400_000);
+}
+
+function todayLocalISO(): string {
+  const now = new Date();
+  return formatISODate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+}
 
 const commonPaymentMethods = [
   "Visa",
@@ -70,27 +142,11 @@ export default function SubscriptionModal(props: {
   const [error, setError] = useState<string | null>(null);
   const [lastModified, setLastModified] = useState<"start" | "end" | "cycle" | null>(null);
 
-  const cycleDays = useMemo(() => {
-    if (!paymentCycle) return null;
-    if (paymentCycle === "monthly") return 30;
-    if (paymentCycle === "yearly") return 365;
-    if (paymentCycle === "custom_days") return Number(customDays) || 30;
-    return null;
-  }, [paymentCycle, customDays]);
-
   const daysInfo = useMemo(() => {
     if (!startDate || !endDate) return null;
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-
-    const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const daysLeft = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
+    const totalDays = diffDaysISO(startDate, endDate);
+    const daysLeft = diffDaysISO(todayLocalISO(), endDate);
+    if (totalDays === null || daysLeft === null) return null;
     return { totalDays, daysLeft };
   }, [startDate, endDate]);
 
@@ -153,33 +209,53 @@ export default function SubscriptionModal(props: {
 
   useEffect(() => {
     if (!props.open || lastModified !== "end") return;
-    if (!endDate || !cycleDays) return;
+    if (!endDate || !paymentCycle) return;
 
     try {
-      const end = new Date(endDate);
-      if (isNaN(end.getTime())) return;
-
-      const start = new Date(end);
-      start.setDate(start.getDate() - cycleDays);
-      setStartDate(start.toISOString().slice(0, 10));
+      if (!parseISODate(endDate)) return;
+      if (paymentCycle === "monthly") {
+        const nextStart = addMonthsISO(endDate, -1);
+        if (!nextStart) return;
+        setStartDate(nextStart);
+        return;
+      }
+      if (paymentCycle === "yearly") {
+        const nextStart = addYearsISO(endDate, -1);
+        if (!nextStart) return;
+        setStartDate(nextStart);
+        return;
+      }
+      if (paymentCycle === "custom_days") {
+        const days = Number(customDays);
+        if (!Number.isFinite(days) || days <= 0) return;
+        const nextStart = addDaysISO(endDate, -Math.trunc(days));
+        if (!nextStart) return;
+        setStartDate(nextStart);
+      }
     } catch (e) {
     }
-  }, [endDate, cycleDays, lastModified, props.open]);
+  }, [endDate, paymentCycle, customDays, lastModified, props.open]);
 
   useEffect(() => {
     if (!props.open || lastModified !== "start") return;
-    if (!startDate || !cycleDays) return;
+    if (!startDate || !paymentCycle) return;
 
     try {
-      const start = new Date(startDate);
-      if (isNaN(start.getTime())) return;
-
-      const end = new Date(start);
-      end.setDate(end.getDate() + cycleDays);
-      setEndDate(end.toISOString().slice(0, 10));
+      const nextDue = computeNextDueDateForCycle(startDate, paymentCycle, customDays);
+      if (!nextDue) return;
+      setEndDate(nextDue);
     } catch (e) {
     }
-  }, [startDate, cycleDays, lastModified, props.open]);
+  }, [startDate, paymentCycle, customDays, lastModified, props.open]);
+
+  useEffect(() => {
+    if (!props.open || lastModified !== "cycle") return;
+    if (!startDate || !paymentCycle) return;
+
+    const nextDue = computeNextDueDateForCycle(startDate, paymentCycle, customDays);
+    if (!nextDue) return;
+    setEndDate(nextDue);
+  }, [startDate, paymentCycle, customDays, lastModified, props.open]);
 
   useEffect(() => {
     if (!props.open) return;
@@ -188,15 +264,12 @@ export default function SubscriptionModal(props: {
     if (paymentCycle) return;
 
     try {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+      const daysDiff = diffDaysISO(startDate, endDate);
+      if (daysDiff === null) return;
 
-      const daysDiff = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (Math.abs(daysDiff - 30) <= 2) {
+      if (addMonthsISO(startDate, 1) === endDate) {
         setPaymentCycle("monthly");
-      } else if (Math.abs(daysDiff - 365) <= 2) {
+      } else if (addYearsISO(startDate, 1) === endDate) {
         setPaymentCycle("yearly");
       } else if (daysDiff > 0) {
         setPaymentCycle("custom_days");
@@ -414,48 +487,45 @@ export default function SubscriptionModal(props: {
               {t.currencyDocs}
             </a>
           </div>
-          <div className="mt-2">
-            <input
-              className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
-              list="nebula-currency-codes-subs"
-              placeholder={currency || "USD"}
-              value={currencyInput}
-              onChange={(e) => {
-                const val = e.target.value;
-                setCurrencyInput(val);
-                if (val.trim()) {
-                  setCurrency(normalizeCurrency(val));
-                }
-              }}
-              onBlur={() => {
-                setCurrencyInput("");
-              }}
-            />
-            <datalist id="nebula-currency-codes-subs">
-              {supportedCurrencies.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.code} — {c.name} ({c.country})
-                </option>
-              ))}
-            </datalist>
-          </div>
+          <ComboBox
+            className="mt-2"
+            value={currencyInput || currency || "USD"}
+            onChange={(val) => {
+              setCurrencyInput(val);
+              if (val.trim()) {
+                setCurrency(normalizeCurrency(val));
+              }
+            }}
+            placeholder={currency || "USD"}
+            options={supportedCurrencies.map(c => ({
+              value: c.code,
+              label: `${c.code} — ${c.name} (${c.country})`
+            }))}
+          />
         </div>
 
         <div>
           <label className="text-xs text-white/60">{lang === "en" ? "Payment cycle" : "支付频率"}</label>
-          <select
-            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
-            value={paymentCycle}
-            onChange={(e) => {
-              setPaymentCycle(e.target.value);
-              setLastModified("cycle");
-            }}
-	          >
-	            <option value="">{lang === "en" ? "Select cycle..." : "选择支付频率..."}</option>
-	            <option value="monthly">{lang === "en" ? "Monthly" : "每月"}</option>
-	            <option value="yearly">{lang === "en" ? "Yearly" : "每年"}</option>
-	            <option value="custom_days">{lang === "en" ? "Custom (days)" : "自定义（天）"}</option>
-	          </select>
+          <div className="relative mt-2">
+            <select
+              className="w-full appearance-none rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50 transition-colors"
+              value={paymentCycle}
+              onChange={(e) => {
+                setPaymentCycle(e.target.value);
+                setLastModified("cycle");
+              }}
+            >
+              <option value="">{lang === "en" ? "Select cycle..." : "选择支付频率..."}</option>
+              <option value="monthly">{lang === "en" ? "Monthly" : "每月"}</option>
+              <option value="yearly">{lang === "en" ? "Yearly" : "每年"}</option>
+              <option value="custom_days">{lang === "en" ? "Custom (days)" : "自定义（天）"}</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-white/40">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </div>
+          </div>
           {paymentCycle === "custom_days" ? (
             <input
               type="number"
@@ -469,28 +539,27 @@ export default function SubscriptionModal(props: {
 
         <div>
           <label className="text-xs text-white/60">{lang === "en" ? "Start date" : "开始时间"}</label>
-          <input
-            type="date"
-            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
-            value={startDate}
-            onChange={(e) => {
-              setStartDate(e.target.value);
+          <DatePicker
+            lang={lang}
+            value={parseISODate(startDate) ? startDate : ""}
+            onChange={(iso) => {
+              setStartDate(iso);
               setLastModified("start");
             }}
+            className="mt-2"
           />
         </div>
 
         <div>
           <label className="text-xs text-white/60">{lang === "en" ? "End date / Next due" : "结束时间 / 下次到期"}</label>
-          <input
-            type="date"
-            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
-            value={endDate}
-            onChange={(e) => {
-              setEndDate(e.target.value);
+          <DatePicker
+            lang={lang}
+            value={parseISODate(endDate) ? endDate : ""}
+            onChange={(iso) => {
+              setEndDate(iso);
               setLastModified("end");
             }}
-            placeholder={lang === "en" ? "Optional" : "可选"}
+            className="mt-2"
           />
           {daysInfo && (
             <div className="mt-2 text-xs text-white/60">
@@ -503,18 +572,16 @@ export default function SubscriptionModal(props: {
 
         <div>
           <label className="text-xs text-white/60">{lang === "en" ? "Payment method" : "支付方式"}</label>
-          <input
-            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
-            list="nebula-payment-methods"
+          <ComboBox
+            className="mt-2"
             value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value)}
+            onChange={setPaymentMethod}
             placeholder={lang === "en" ? "Select or enter custom" : "选择或输入自定义"}
+            options={commonPaymentMethods.map(method => ({
+              value: method,
+              label: method
+            }))}
           />
-          <datalist id="nebula-payment-methods">
-            {commonPaymentMethods.map((method) => (
-              <option key={method} value={method} />
-            ))}
-          </datalist>
         </div>
       </div>
 

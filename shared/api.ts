@@ -86,6 +86,12 @@ export type ApiSubscriptionUpsertRequest = {
   notifyChannelIds?: number[];
 };
 
+export type ApiSubscriptionRenewResponse = {
+  ok: true;
+  startDate: string;
+  nextDueDate: string;
+};
+
 export type ApiWebhookChannel = {
   id: number;
   name: string;

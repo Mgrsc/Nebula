@@ -92,17 +92,22 @@ export default function BackupTab(props: {
           {props.backupAutoEnabled && (
             <div>
               <label className="text-xs text-white/50 mb-2 block">{t.backupInterval}</label>
-              <select
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50"
-                value={props.backupInterval}
-                onChange={(e) => props.setBackupInterval(Number(e.target.value))}
-              >
-                <option value={6}>{language === "zh-CN" ? "每 6 小时" : "Every 6 hours"}</option>
-                <option value={12}>{language === "zh-CN" ? "每 12 小时" : "Every 12 hours"}</option>
-                <option value={24}>{language === "zh-CN" ? "每 24 小时" : "Every 24 hours"}</option>
-                <option value={48}>{language === "zh-CN" ? "每 48 小时" : "Every 48 hours"}</option>
-                <option value={168}>{language === "zh-CN" ? "每周" : "Weekly"}</option>
-              </select>
+              <div className="relative">
+                <select
+                  className="w-full appearance-none rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50 transition-colors"
+                  value={props.backupInterval}
+                  onChange={(e) => props.setBackupInterval(Number(e.target.value))}
+                >
+                  <option value={6}>{language === "zh-CN" ? "每 6 小时" : "Every 6 hours"}</option>
+                  <option value={12}>{language === "zh-CN" ? "每 12 小时" : "Every 12 hours"}</option>
+                  <option value={24}>{language === "zh-CN" ? "每 24 小时" : "Every 24 hours"}</option>
+                  <option value={48}>{language === "zh-CN" ? "每 48 小时" : "Every 48 hours"}</option>
+                  <option value={168}>{language === "zh-CN" ? "每周" : "Weekly"}</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-white/40">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+              </div>
             </div>
           )}
 

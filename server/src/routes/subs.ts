@@ -8,6 +8,7 @@ import { getSettings, parseNumericId, recordExists } from "../helpers/database";
 import { validateSubscriptionInput } from "../validators";
 import { todayISOInTimeZone, diffDays } from "../services/time";
 import { convertToBaseCurrency } from "../services/rates";
+import { computeNextDueDate, type PaymentCycle } from "../services/dates";
 
 export const subsRoutes = new Elysia({ prefix: "/api" })
   .post(
@@ -148,6 +149,96 @@ export const subsRoutes = new Elysia({ prefix: "/api" })
         notifyTime: t.Optional(t.String()),
         notifyChannelIds: t.Optional(t.Array(t.Number()))
       })
+    }
+  )
+  .post(
+    "/subs/:id/renew",
+    ({ params, headers }) => {
+      const authCheck = requireAuth()({ headers } as any);
+      if (authCheck) return authCheck;
+
+      const id = parseNumericId(params.id);
+      if (!id) return errorResponse("invalid id");
+
+      const sub = db
+        .query<
+          {
+            name: string;
+            payment_cycle: string;
+            custom_days: number | null;
+            start_date: string;
+            next_due_date: string;
+          },
+          [number]
+        >(
+          `SELECT name, payment_cycle, custom_days, start_date, next_due_date
+           FROM subscriptions
+           WHERE id = ?;`
+        )
+        .get(id);
+      if (!sub) return notFound();
+
+      const paymentCycle =
+        sub.payment_cycle === "monthly" || sub.payment_cycle === "yearly" || sub.payment_cycle === "custom_days"
+          ? (sub.payment_cycle as PaymentCycle)
+          : null;
+      if (!paymentCycle) {
+        log("error", "subscription.renew", "invalid payment cycle", {
+          id,
+          name: sub.name,
+          payment_cycle: sub.payment_cycle
+        });
+        return errorResponse("invalid paymentCycle", 400);
+      }
+
+      const startDate = sub.next_due_date;
+      const nextDueDate = computeNextDueDate({
+        startDate,
+        paymentCycle,
+        customDays: sub.custom_days
+      });
+      if (!nextDueDate) {
+        log("error", "subscription.renew", "failed to compute next due date", {
+          id,
+          name: sub.name,
+          payment_cycle: paymentCycle,
+          custom_days: sub.custom_days ?? null,
+          start_date: startDate
+        });
+        return errorResponse("invalid nextDueDate", 400);
+      }
+
+      log("debug", "subscription.renew", "renewal computed", {
+        id,
+        name: sub.name,
+        payment_cycle: paymentCycle,
+        custom_days: sub.custom_days ?? null,
+        previous_start_date: sub.start_date,
+        previous_next_due_date: sub.next_due_date,
+        next_start_date: startDate,
+        next_due_date: nextDueDate
+      });
+
+      db.query(
+        `UPDATE subscriptions SET
+          start_date = ?,
+          next_due_date = ?
+         WHERE id = ?;`
+      ).run(startDate, nextDueDate, id);
+
+      log("info", "subscription.renew", "subscription renewed", {
+        id,
+        name: sub.name,
+        start_date: startDate,
+        next_due_date: nextDueDate,
+        payment_cycle: paymentCycle,
+        custom_days: sub.custom_days ?? null
+      });
+
+      return { ok: true, startDate, nextDueDate };
+    },
+    {
+      params: t.Object({ id: t.String() })
     }
   )
   .delete(

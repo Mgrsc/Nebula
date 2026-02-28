@@ -6,7 +6,7 @@ import Modal from "../components/Modal";
 import { formatMoney } from "../utils/helpers";
 import { useAuth, useAuthHeaders } from "../contexts/AuthContext";
 import { apiFetch } from "../utils/api";
-import type { ApiSubsListResponse, ApiSubscription } from "../../../shared/api";
+import type { ApiSubsListResponse, ApiSubscription, ApiSubscriptionRenewResponse } from "../../../shared/api";
 
 function getProgressColor(days: number) {
   if (days <= 3) return "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]";
@@ -14,10 +14,17 @@ function getProgressColor(days: number) {
   return "bg-emerald-500";
 }
 
+function diffDaysISO(startDate: string, endDate: string): number | null {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return Math.round((end - start) / 86_400_000);
+}
+
 function getCycleLength(sub: ApiSubscription): number {
-  if (sub.payment_cycle === "monthly") return 30;
-  if (sub.payment_cycle === "yearly") return 365;
-  if (sub.payment_cycle === "custom_days") return sub.custom_days ?? 30;
+  const real = diffDaysISO(sub.start_date, sub.next_due_date);
+  if (real && real > 0) return real;
+  if (sub.payment_cycle === "custom_days" && sub.custom_days && sub.custom_days > 0) return sub.custom_days;
   return 30;
 }
 
@@ -25,12 +32,20 @@ function Card({
   sub,
   exchangeEnabled,
   canEdit,
-  onEdit
+  renewing,
+  renewLabel,
+  renewingLabel,
+  onEdit,
+  onRenew
 }: {
   sub: ApiSubscription;
   exchangeEnabled: boolean;
   canEdit: boolean;
+  renewing: boolean;
+  renewLabel: string;
+  renewingLabel: string;
   onEdit: (s: ApiSubscription) => void;
+  onRenew: (s: ApiSubscription) => void;
 }) {
   const top = exchangeEnabled && sub.converted ? formatMoney(sub.converted.price, sub.converted.currency) : formatMoney(sub.price, sub.currency);
   const bottom = exchangeEnabled && sub.converted ? formatMoney(sub.price, sub.currency) : null;
@@ -77,6 +92,21 @@ function Card({
           <span>{sub.next_due_date}</span>
           <span className={sub.days_left <= 3 ? "text-red-400 font-bold" : "font-bold"}>{sub.days_left} days left</span>
         </div>
+        {canEdit ? (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              className="rounded-md border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[10px] font-semibold text-sky-200 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRenew(sub);
+              }}
+              disabled={renewing}
+            >
+              {renewing ? renewingLabel : renewLabel}
+            </button>
+          </div>
+        ) : null}
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div
             className={`h-full transition-all duration-500 ${progressColor}`}
@@ -140,6 +170,7 @@ export default function Dashboard() {
   const [rateOpen, setRateOpen] = useState(false);
   const [editSub, setEditSub] = useState<ApiSubscription | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [renewingId, setRenewingId] = useState<number | null>(null);
   const { isAuthenticated, authRequired } = useAuth();
   const canWrite = !authRequired || isAuthenticated;
   const authHeaders = useAuthHeaders();
@@ -172,6 +203,24 @@ export default function Dashboard() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
+  async function renewSubscription(sub: ApiSubscription) {
+    if (!canWrite) return;
+    setError(null);
+    setRenewingId(sub.id);
+    try {
+      await apiFetch<ApiSubscriptionRenewResponse>(`/api/subs/${sub.id}/renew`, {
+        method: "POST",
+        headers: authHeaders
+      });
+      const refreshed = await load();
+      setData(refreshed);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setRenewingId(null);
+    }
+  }
+
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return items;
     const query = searchQuery.toLowerCase();
@@ -184,11 +233,10 @@ export default function Dashboard() {
     let upcoming = 0;
     
     for (const item of data.items) {
-      const p = item.converted ? item.converted.price : item.price; 
-      if (item.payment_cycle === 'monthly') totalMonthly += p;
-      else if (item.payment_cycle === 'yearly') totalMonthly += p / 12;
-      else if (item.payment_cycle === 'custom_days' && item.custom_days) totalMonthly += (p / item.custom_days) * 30;
-      
+      const p = item.converted ? item.converted.price : item.price;
+      const cycleDays = getCycleLength(item);
+      totalMonthly += (p / cycleDays) * 30;
+
       if (item.days_left <= 7) upcoming++;
     }
     
@@ -306,10 +354,14 @@ export default function Dashboard() {
                 sub={sub}
                 exchangeEnabled={Boolean(data?.settings.exchangeEnabled)}
                 canEdit={canWrite}
+                renewing={renewingId === sub.id}
+                renewLabel={t.renewSubscription}
+                renewingLabel={t.renewing}
                 onEdit={(s) => {
                   if (!canWrite) return;
                   setEditSub(s);
                 }}
+                onRenew={renewSubscription}
               />
             ))}
             {filteredItems.length === 0 && items.length > 0 && (
