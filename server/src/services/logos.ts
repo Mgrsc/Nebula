@@ -1,7 +1,6 @@
 import { LOGO_FETCH_TIMEOUT_MS, MAX_LOGO_CANDIDATES } from "../constants/config";
 import { fetchWithTimeout } from "../helpers/fetch";
-
-type WikiSearchItem = { pageid: number; title: string };
+import { log } from "./logger";
 
 function uniqBy<T>(items: T[], key: (x: T) => string) {
   const seen = new Set<string>();
@@ -19,72 +18,16 @@ function uniqBy<T>(items: T[], key: (x: T) => string) {
 function getDomainFromUrl(value: string) {
   try {
     const u = new URL(value);
-    return u.hostname;
+    return u.hostname.toLowerCase();
   } catch {
     try {
       const u = new URL(`https://${value}`);
-      return u.hostname;
+      return u.hostname.toLowerCase();
     } catch {
       const m = value.trim().match(/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/);
-      return m ? m[0] : null;
+      return m ? m[0].toLowerCase() : null;
     }
   }
-}
-
-async function wikiSearch(lang: string, q: string): Promise<WikiSearchItem[]> {
-  const api = `https://${lang}.wikipedia.org/w/api.php`;
-  const url = new URL(api);
-  url.searchParams.set("action", "query");
-  url.searchParams.set("list", "search");
-  url.searchParams.set("srsearch", q);
-  url.searchParams.set("srlimit", "6");
-  url.searchParams.set("format", "json");
-  const res = await fetchWithTimeout(
-    url.toString(),
-    { headers: { "user-agent": "Nebula/0.1 (logo search)" } },
-    LOGO_FETCH_TIMEOUT_MS
-  );
-  if (!res.ok) return [];
-  const data = (await res.json()) as any;
-  const items = Array.isArray(data?.query?.search) ? (data.query.search as unknown[]) : [];
-  return items
-    .map((it) => {
-      const raw: any = it;
-      const pageid = Number(raw?.pageid);
-      if (!Number.isFinite(pageid) || pageid <= 0) return null;
-      const title = typeof raw?.title === "string" ? raw.title : "";
-      return { pageid, title } satisfies WikiSearchItem;
-    })
-    .filter((x): x is WikiSearchItem => Boolean(x));
-}
-
-async function wikiThumbnails(lang: string, pageids: number[]) {
-  if (!pageids.length) return [];
-  const api = `https://${lang}.wikipedia.org/w/api.php`;
-  const url = new URL(api);
-  url.searchParams.set("action", "query");
-  url.searchParams.set("prop", "pageimages");
-  url.searchParams.set("piprop", "thumbnail");
-  url.searchParams.set("pithumbsize", "256");
-  url.searchParams.set("pageids", pageids.join("|"));
-  url.searchParams.set("format", "json");
-  const res = await fetchWithTimeout(
-    url.toString(),
-    { headers: { "user-agent": "Nebula/0.1 (logo search)" } },
-    LOGO_FETCH_TIMEOUT_MS
-  );
-  if (!res.ok) return [];
-  const data = (await res.json()) as any;
-  const pages = data?.query?.pages ?? {};
-  const out: Array<{ url: string; title: string; source: string }> = [];
-  for (const p of Object.values(pages)) {
-    const page: any = p;
-    const src = page?.thumbnail?.source;
-    if (typeof src === "string" && src.length) {
-      out.push({ url: src, title: page?.title ?? "", source: `wikipedia:${lang}` });
-    }
-  }
-  return out;
 }
 
 export type LogoCandidate = { url: string; title?: string; source: string };
@@ -114,6 +57,24 @@ function extractTagAttr(tag: string, attr: string) {
 
 function looksLikeImageUrl(u: string) {
   return /\.(png|jpg|jpeg|webp|svg|ico)(\?|#|$)/i.test(u) || u.startsWith("data:image/");
+}
+
+function normalizeCandidateUrl(value: string) {
+  try {
+    const u = new URL(value);
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return value;
+  }
+}
+
+function iconRelPriority(rel: string) {
+  if (rel.includes("apple-touch-icon")) return 0;
+  if (rel.includes("shortcut icon")) return 1;
+  if (rel === "icon") return 2;
+  if (rel.includes("icon")) return 3;
+  return 9;
 }
 
 async function siteCandidates(rawUrl: string) {
@@ -146,7 +107,7 @@ async function siteCandidates(rawUrl: string) {
   }
   const head = extractHead(html);
 
-  const out: LogoCandidate[] = [];
+  const out: Array<LogoCandidate & { priority: number }> = [];
 
   const linkTags = head.match(/<link\b[^>]*>/gi) ?? [];
   for (const tag of linkTags) {
@@ -156,79 +117,82 @@ async function siteCandidates(rawUrl: string) {
     if (!href) continue;
     const abs = absolutize(res.url, href);
     if (!abs) continue;
-    out.push({ url: abs, title: rel, source: "site" });
+    if (!looksLikeImageUrl(abs)) continue;
+    out.push({ url: normalizeCandidateUrl(abs), title: rel, source: "site", priority: iconRelPriority(rel) });
   }
 
-  const metaTags = head.match(/<meta\b[^>]*>/gi) ?? [];
-  for (const tag of metaTags) {
-    const prop = (extractTagAttr(tag, "property") || extractTagAttr(tag, "name")).toLowerCase();
-    if (prop !== "og:image" && prop !== "twitter:image") continue;
-    const content = extractTagAttr(tag, "content");
-    if (!content) continue;
-    const abs = absolutize(res.url, content);
-    if (!abs) continue;
-    out.push({ url: abs, title: prop, source: "site" });
-  }
+  out.sort((a, b) => a.priority - b.priority);
 
-  return uniqBy(out.filter((x) => looksLikeImageUrl(x.url)), (x) => x.url).slice(0, 6);
+  return uniqBy(out, (x) => x.url)
+    .slice(0, 6)
+    .map(({ url: iconUrl, title, source }) => ({ url: iconUrl, title, source }));
+}
+
+function providerCandidates(domain: string): LogoCandidate[] {
+  const d = domain.trim().toLowerCase();
+  if (!d) return [];
+  return [
+    {
+      url: `https://${d}/favicon.ico`,
+      title: d,
+      source: "site:fallback"
+    },
+    {
+      url: `https://${d}/apple-touch-icon.png`,
+      title: d,
+      source: "site:fallback"
+    },
+    {
+      url: `https://${d}/apple-touch-icon-precomposed.png`,
+      title: d,
+      source: "site:fallback"
+    },
+    {
+      url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(d)}&sz=128`,
+      title: d,
+      source: "favicon:google"
+    },
+    {
+      url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(d)}.ico`,
+      title: d,
+      source: "favicon:duckduckgo"
+    }
+  ];
 }
 
 export async function searchLogoCandidates(args: { q?: string | null; url?: string | null }) {
+  const urlInput = (args.url ?? "").trim();
+  const qInput = (args.q ?? "").trim();
+  const domain = getDomainFromUrl(urlInput) ?? getDomainFromUrl(qInput);
+
   const candidates: LogoCandidate[] = [];
-
-  const domain = args.url ? getDomainFromUrl(args.url) : null;
-  if (domain) {
-    candidates.push({
-      url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`,
-      title: domain,
-      source: "favicon"
-    });
-    candidates.push({
-      url: `https://favicon.vemetric.com/${encodeURIComponent(domain)}`,
-      title: domain,
-      source: "favicon.vemetric.com"
-    });
-    candidates.push({
-      url: `https://icons.favicone.com/i/${encodeURIComponent(domain)}/favicon.ico`,
-      title: domain,
-      source: "icons.favicone.com"
-    });
-    candidates.push({
-      url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
-      title: domain,
-      source: "icons.duckduckgo.com"
-    });
-    candidates.push({
-      url: `https://icon.horse/icon/${domain}`,
-      title: domain,
-      source: "icon.horse"
-    });
-    candidates.push({
-      url: `https://logo.clearbit.com/${domain}?size=256`,
-      title: domain,
-      source: "clearbit"
-    });
+  let siteCount = 0;
+  if (urlInput) {
+    try {
+      const site = await siteCandidates(urlInput);
+      candidates.push(...site);
+      siteCount = site.length;
+    } catch (error: any) {
+      log("warn", "logos.search", "site icon extraction failed", {
+        url: urlInput,
+        error: String(error?.message ?? error)
+      });
+    }
   }
 
-  const q = (args.q ?? "").trim();
-  if (q) {
-    try {
-      const zh = await wikiSearch("zh", q);
-      const zhIds = uniqBy(zh, (x) => String(x.pageid)).map((x) => Number(x.pageid));
-      candidates.push(...(await wikiThumbnails("zh", zhIds)));
-    } catch {}
-    try {
-      const en = await wikiSearch("en", q);
-      const enIds = uniqBy(en, (x) => String(x.pageid)).map((x) => Number(x.pageid));
-      candidates.push(...(await wikiThumbnails("en", enIds)));
-    } catch {}
-  }
+  const provider = domain ? providerCandidates(domain) : [];
+  candidates.push(...provider);
 
-  if (args.url) {
-    try {
-      candidates.push(...(await siteCandidates(args.url)));
-    } catch {}
-  }
+  const items = uniqBy(candidates, (c) => normalizeCandidateUrl(c.url)).slice(0, MAX_LOGO_CANDIDATES);
 
-  return uniqBy(candidates, (c) => c.url).slice(0, MAX_LOGO_CANDIDATES);
+  log("debug", "logos.search", "logo candidates generated", {
+    input_url: urlInput || null,
+    input_q: qInput || null,
+    domain: domain ?? null,
+    site_candidates: siteCount,
+    provider_candidates: provider.length,
+    returned_candidates: items.length
+  });
+
+  return items;
 }
